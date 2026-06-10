@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: InventoryPro-config
+  namespace: InventoryPro
+data:
+  POSTGRES_DB: "InventoryPro"
+  POSTGRES_USER: "InventoryPro_user"
+  DATABASE_URL: "postgresql://InventoryPro_user:InventoryPro_pass@postgres-service:5432/InventoryPro"

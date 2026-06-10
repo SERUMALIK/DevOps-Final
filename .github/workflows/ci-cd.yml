@@ -1,0 +1,143 @@
+name: InventoryPro CI/CD
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  DOCKERHUB_USERNAME: sidramalik1454
+  IMAGE_BACKEND: sidramalik1454/inventorypro-backend
+  IMAGE_FRONTEND: sidramalik1454/inventorypro-frontend
+
+jobs:
+
+  # ─────────────────────────────────────────────
+  # JOB 1 — Code Quality with SonarCloud
+  # ─────────────────────────────────────────────
+  sonarcloud:
+    name: SonarCloud Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # full history needed by SonarCloud
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.projectKey=SERUMALIK_DevOps-Final
+            -Dsonar.organization=serumalik
+            -Dsonar.sources=backend/app,frontend/src
+            -Dsonar.projectName=InventoryPro
+
+  # ─────────────────────────────────────────────
+  # JOB 2 — Security Scan with Trivy (filesystem)
+  # ─────────────────────────────────────────────
+  trivy-fs:
+    name: Trivy Filesystem Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Trivy scan — backend source
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: ./backend
+          severity: HIGH,CRITICAL
+          format: table
+          exit-code: 0          # don't fail the pipeline, just report
+
+  # ─────────────────────────────────────────────
+  # JOB 3 — Build, Scan & Push Docker images
+  # ─────────────────────────────────────────────
+  build-and-push:
+    name: Build, Trivy Image Scan & Push
+    runs-on: ubuntu-latest
+    needs: [sonarcloud, trivy-fs]   # only runs if both above pass
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set image tag
+        id: tag
+        run: echo "TAG=${{ github.run_number }}" >> $GITHUB_OUTPUT
+
+      - name: Build backend image
+        run: |
+          docker build -t ${{ env.IMAGE_BACKEND }}:${{ steps.tag.outputs.TAG }} ./backend
+          docker tag ${{ env.IMAGE_BACKEND }}:${{ steps.tag.outputs.TAG }} ${{ env.IMAGE_BACKEND }}:latest
+
+      - name: Build frontend image
+        run: |
+          docker build -t ${{ env.IMAGE_FRONTEND }}:${{ steps.tag.outputs.TAG }} ./frontend
+          docker tag ${{ env.IMAGE_FRONTEND }}:${{ steps.tag.outputs.TAG }} ${{ env.IMAGE_FRONTEND }}:latest
+
+      - name: Trivy scan — backend image
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: image
+          image-ref: ${{ env.IMAGE_BACKEND }}:${{ steps.tag.outputs.TAG }}
+          severity: HIGH,CRITICAL
+          format: table
+          exit-code: 0
+
+      - name: Trivy scan — frontend image
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: image
+          image-ref: ${{ env.IMAGE_FRONTEND }}:${{ steps.tag.outputs.TAG }}
+          severity: HIGH,CRITICAL
+          format: table
+          exit-code: 0
+
+      - name: Push backend to Docker Hub
+        run: |
+          docker push ${{ env.IMAGE_BACKEND }}:${{ steps.tag.outputs.TAG }}
+          docker push ${{ env.IMAGE_BACKEND }}:latest
+
+      - name: Push frontend to Docker Hub
+        run: |
+          docker push ${{ env.IMAGE_FRONTEND }}:${{ steps.tag.outputs.TAG }}
+          docker push ${{ env.IMAGE_FRONTEND }}:latest
+
+  # ─────────────────────────────────────────────
+  # JOB 4 — Deploy with Docker Compose
+  # ─────────────────────────────────────────────
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Write .env file
+        run: |
+          cat > .env << EOF
+          POSTGRES_DB=inventorypro
+          POSTGRES_USER=inventorypro_user
+          POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+          DATABASE_URL=postgresql://inventorypro_user:${{ secrets.POSTGRES_PASSWORD }}@db:5432/inventorypro
+          JWT_SECRET=${{ secrets.JWT_SECRET }}
+          EOF
+
+      - name: Deploy with Docker Compose
+        run: |
+          docker compose -f docker-compose.yml pull
+          docker compose -f docker-compose.yml up -d --force-recreate

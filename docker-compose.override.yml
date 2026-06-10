@@ -1,0 +1,15 @@
+# Development overrides — mounts local source for hot-reload
+# Usage: docker compose -f docker-compose.yml -f docker-compose.override.yml up
+
+services:
+  backend:
+    build: ./backend          # build from local source instead of pulling image
+    volumes:
+      - ./backend:/app
+    environment:
+      - DEBUG=true
+
+  frontend:
+    build: ./frontend         # build from local source instead of pulling image
+    volumes:
+      - ./frontend/src:/app/src

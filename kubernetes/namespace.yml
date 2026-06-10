@@ -1,0 +1,22 @@
+---
+# 1. Create the namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: inventorypro
+
+---
+# 2. Secrets — base64-encode your real values before applying
+#    echo -n "your_value" | base64
+#
+#    DATABASE_URL  = postgresql://inventorypro_user:inventorypro_pass@db:5432/inventorypro
+#    JWT_SECRET    = your_long_random_secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: inventorypro-secrets
+  namespace: inventorypro
+type: Opaque
+data:
+  DATABASE_URL: cG9zdGdyZXNxbDovL2ludmVudG9yeXByb191c2VyOmludmVudG9yeXByb19wYXNzQGRiOjU0MzIvaW52ZW50b3J5cHJv
+  JWT_SECRET: aW52ZW50b3J5cHJvX2p3dF9zZWNyZXRfY2hhbmdlaW5wcm9kdWN0aW9u

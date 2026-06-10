@@ -1,0 +1,157 @@
+---
+- name: Configure all nodes
+  hosts: all
+  become: yes
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install required packages
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - git
+          - unzip
+        state: present
+
+    - name: Install Docker
+      apt:
+        name: docker.io
+        state: present
+
+    - name: Start and enable Docker
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Add ubuntu user to docker group
+      user:
+        name: ubuntu
+        groups: docker
+        append: yes
+
+- name: Configure master node
+  hosts: master
+  become: yes
+  tasks:
+    - name: Check kubectl version
+      command: kubectl version --client --output=yaml
+      register: kubectl_version
+      ignore_errors: yes
+
+    - name: Print kubectl version
+      debug:
+        msg: "{{ kubectl_version.stdout }}"
+
+# ─────────────────────────────────────────────────────────────
+# GitHub Actions self-hosted runner (replaces Jenkins entirely)
+# Runner registers itself to SERUMALIK/DevOps-Final and listens
+# for workflow jobs triggered by pushes to main.
+# ─────────────────────────────────────────────────────────────
+- name: Configure GitHub Actions runner on master
+  hosts: master
+  become: yes
+  vars:
+    runner_version: "2.317.0"
+    runner_user: "ubuntu"
+    runner_dir: "/home/ubuntu/actions-runner"
+    github_repo: "https://github.com/SERUMALIK/DevOps-Final"
+    # Set this variable when running the playbook:
+    # ansible-playbook deploy.yml -e "github_token=YOUR_RUNNER_TOKEN"
+    github_token: "{{ github_token }}"
+
+  tasks:
+    - name: Ensure Docker is running
+      systemd:
+        name: docker
+        state: started
+
+    - name: Create runner directory
+      file:
+        path: "{{ runner_dir }}"
+        state: directory
+        owner: "{{ runner_user }}"
+        group: "{{ runner_user }}"
+        mode: '0755'
+
+    - name: Check if runner already downloaded
+      stat:
+        path: "{{ runner_dir }}/config.sh"
+      register: runner_exists
+
+    - name: Download GitHub Actions runner
+      become_user: "{{ runner_user }}"
+      get_url:
+        url: "https://github.com/actions/runner/releases/download/v{{ runner_version }}/actions-runner-linux-x64-{{ runner_version }}.tar.gz"
+        dest: "/tmp/actions-runner.tar.gz"
+      when: not runner_exists.stat.exists
+
+    - name: Extract runner package
+      become_user: "{{ runner_user }}"
+      unarchive:
+        src: "/tmp/actions-runner.tar.gz"
+        dest: "{{ runner_dir }}"
+        remote_src: yes
+      when: not runner_exists.stat.exists
+
+    - name: Configure GitHub Actions runner
+      become_user: "{{ runner_user }}"
+      command: >
+        {{ runner_dir }}/config.sh
+        --url {{ github_repo }}
+        --token {{ github_token }}
+        --name "inventorypro-runner"
+        --labels "self-hosted,linux,x64"
+        --work "_work"
+        --unattended
+      args:
+        chdir: "{{ runner_dir }}"
+      when: not runner_exists.stat.exists
+
+    - name: Install runner as a systemd service
+      command: "{{ runner_dir }}/svc.sh install {{ runner_user }}"
+      args:
+        chdir: "{{ runner_dir }}"
+      ignore_errors: yes
+
+    - name: Start and enable runner service
+      systemd:
+        name: "actions.runner.SERUMALIK-DevOps--Final.inventorypro-runner"
+        state: started
+        enabled: yes
+      ignore_errors: yes
+
+    - name: Configure Docker daemon log rotation
+      copy:
+        content: |
+          {
+            "log-driver": "json-file",
+            "log-opts": {
+              "max-size": "10m",
+              "max-file": "3"
+            }
+          }
+        dest: /etc/docker/daemon.json
+        mode: '0644'
+      notify: Restart Docker
+
+    - name: Verify runner is running
+      command: systemctl is-active "actions.runner.SERUMALIK-DevOps--Final.inventorypro-runner"
+      register: runner_status
+      ignore_errors: yes
+
+    - name: Print runner status
+      debug:
+        msg: "GitHub Actions runner is {{ runner_status.stdout }}"
+
+  handlers:
+    - name: Restart Docker
+      systemd:
+        name: docker
+        state: restarted
