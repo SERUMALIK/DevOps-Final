@@ -11,26 +11,25 @@ env:
   IMAGE_BACKEND:      sidramalik1454/inventorypro-backend
   IMAGE_FRONTEND:     sidramalik1454/inventorypro-frontend
 
-
-
+# Required for SARIF uploads to GitHub Security tab
 permissions:
   contents:        read
-  security-events: write   # ← this is what was missing for SARIF uploads
+  security-events: write
   actions:         read
 
-
-# ════════════════════════════════════════════════════════════
-# JOB 1 — SonarCloud Code Quality Analysis
-# ════════════════════════════════════════════════════════════
 jobs:
+
+  # ----------------------------------------------------------------
+  # JOB 1 - SonarCloud Code Quality
+  # ----------------------------------------------------------------
   sonarcloud:
-    name: "🔍 SonarCloud Code Quality"
+    name: "SonarCloud Code Quality"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0        # full git history required by SonarCloud
+          fetch-depth: 0
 
       - name: Run SonarCloud scan
         uses: SonarSource/sonarcloud-github-action@master
@@ -45,55 +44,55 @@ jobs:
             -Dsonar.projectName=InventoryPro
             -Dsonar.python.version=3.11
 
-# ════════════════════════════════════════════════════════════
-# JOB 2 — Trivy Filesystem Security Scan (source code)
-# ════════════════════════════════════════════════════════════
+  # ----------------------------------------------------------------
+  # JOB 2 - Trivy Filesystem Scan (source code)
+  # ----------------------------------------------------------------
   trivy-fs-scan:
-    name: "🛡️ Trivy Filesystem Scan"
+    name: "Trivy Filesystem Scan"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Scan backend source — HIGH & CRITICAL CVEs
+      - name: Scan backend source - table output
         uses: aquasecurity/trivy-action@master
         with:
-          scan-type:   fs
-          scan-ref:    ./backend
-          severity:    HIGH,CRITICAL
-          format:      table
-          exit-code:   0
+          scan-type:  fs
+          scan-ref:   ./backend
+          severity:   HIGH,CRITICAL
+          format:     table
+          exit-code:  0
 
-      - name: Scan frontend source — HIGH & CRITICAL CVEs
+      - name: Scan frontend source - table output
         uses: aquasecurity/trivy-action@master
         with:
-          scan-type:   fs
-          scan-ref:    ./frontend
-          severity:    HIGH,CRITICAL
-          format:      table
-          exit-code:   0
+          scan-type:  fs
+          scan-ref:   ./frontend
+          severity:   HIGH,CRITICAL
+          format:     table
+          exit-code:  0
 
-      - name: Scan backend source — SARIF report (uploaded to GitHub Security tab)
+      - name: Scan backend source - SARIF for Security tab
         uses: aquasecurity/trivy-action@master
         with:
-          scan-type:    fs
-          scan-ref:     ./backend
-          severity:     HIGH,CRITICAL
-          format:       sarif
-          output:       trivy-fs-backend.sarif
-          exit-code:    0
+          scan-type:  fs
+          scan-ref:   ./backend
+          severity:   HIGH,CRITICAL
+          format:     sarif
+          output:     trivy-fs-backend.sarif
+          exit-code:  0
 
-      - name: Upload SARIF to GitHub Security tab
+      - name: Upload filesystem SARIF to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-fs-backend.sarif
           category:   trivy-filesystem
 
-# ════════════════════════════════════════════════════════════
-# JOB 3 — Trivy Kubernetes Manifest Scan
-# ════════════════════════════════════════════════════════════
+  # ----------------------------------------------------------------
+  # JOB 3 - Trivy Kubernetes Manifest Scan
+  # ----------------------------------------------------------------
   trivy-k8s-scan:
-    name: "☸️ Trivy Kubernetes Manifest Scan"
+    name: "Trivy Kubernetes Manifest Scan"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -104,31 +103,20 @@ jobs:
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
             | sh -s -- -b /usr/local/bin
 
-      - name: Scan backend deployment manifest
+      - name: List kubernetes folder contents
+        run: |
+          echo "=== kubernetes/ folder ==="
+          find kubernetes/ -type f | sort
+
+      - name: Scan all Kubernetes manifests - table output
         run: |
           trivy config \
             --severity HIGH,CRITICAL \
             --format table \
             --exit-code 0 \
-            kubernetes/backend.yml
+            kubernetes/
 
-      - name: Scan frontend deployment manifest
-        run: |
-          trivy config \
-            --severity HIGH,CRITICAL \
-            --format table \
-            --exit-code 0 \
-            kubernetes/frontend.yml
-
-      - name: Scan postgres deployment manifest
-        run: |
-          trivy config \
-            --severity HIGH,CRITICAL \
-            --format table \
-            --exit-code 0 \
-            kubernetes/postgres.yml
-
-      - name: Scan all Kubernetes manifests — SARIF report
+      - name: Scan all Kubernetes manifests - SARIF for Security tab
         run: |
           trivy config \
             --severity HIGH,CRITICAL \
@@ -143,11 +131,11 @@ jobs:
           sarif_file: trivy-k8s.sarif
           category:   trivy-kubernetes
 
-# ════════════════════════════════════════════════════════════
-# JOB 4 — Build Docker Images
-# ════════════════════════════════════════════════════════════
+  # ----------------------------------------------------------------
+  # JOB 4 - Docker Build
+  # ----------------------------------------------------------------
   docker-build:
-    name: "🐳 Docker Build"
+    name: "Docker Build"
     runs-on: ubuntu-latest
     needs: [sonarcloud, trivy-fs-scan, trivy-k8s-scan]
     outputs:
@@ -174,7 +162,7 @@ jobs:
             -t ${{ env.IMAGE_FRONTEND }}:latest \
             ./frontend
 
-      - name: Save images as tar archives for next jobs
+      - name: Save images as tar archives
         run: |
           docker save ${{ env.IMAGE_BACKEND }}:${{ steps.tag.outputs.TAG }} \
             -o backend-image.tar
@@ -184,22 +172,22 @@ jobs:
       - name: Upload backend image artifact
         uses: actions/upload-artifact@v4
         with:
-          name: backend-image
-          path: backend-image.tar
-          retention-days: 1
+          name:            backend-image
+          path:            backend-image.tar
+          retention-days:  1
 
       - name: Upload frontend image artifact
         uses: actions/upload-artifact@v4
         with:
-          name: frontend-image
-          path: frontend-image.tar
-          retention-days: 1
+          name:            frontend-image
+          path:            frontend-image.tar
+          retention-days:  1
 
-# ════════════════════════════════════════════════════════════
-# JOB 5 — Trivy Docker Image Security Scan
-# ════════════════════════════════════════════════════════════
+  # ----------------------------------------------------------------
+  # JOB 5 - Trivy Docker Image Scan
+  # ----------------------------------------------------------------
   trivy-image-scan:
-    name: "🔐 Trivy Docker Image Scan"
+    name: "Trivy Docker Image Scan"
     runs-on: ubuntu-latest
     needs: docker-build
     steps:
@@ -218,43 +206,43 @@ jobs:
           docker load -i backend-image.tar
           docker load -i frontend-image.tar
 
-      - name: Trivy scan — backend image (table output)
+      - name: Scan backend image - table output
         uses: aquasecurity/trivy-action@master
         with:
-          scan-type:    image
-          image-ref:    ${{ env.IMAGE_BACKEND }}:${{ needs.docker-build.outputs.image-tag }}
-          severity:     HIGH,CRITICAL
-          format:       table
-          exit-code:    0
+          scan-type:  image
+          image-ref:  ${{ env.IMAGE_BACKEND }}:${{ github.run_number }}
+          severity:   HIGH,CRITICAL
+          format:     table
+          exit-code:  0
 
-      - name: Trivy scan — frontend image (table output)
+      - name: Scan frontend image - table output
         uses: aquasecurity/trivy-action@master
         with:
-          scan-type:    image
-          image-ref:    ${{ env.IMAGE_FRONTEND }}:${{ needs.docker-build.outputs.image-tag }}
-          severity:     HIGH,CRITICAL
-          format:       table
-          exit-code:    0
+          scan-type:  image
+          image-ref:  ${{ env.IMAGE_FRONTEND }}:${{ github.run_number }}
+          severity:   HIGH,CRITICAL
+          format:     table
+          exit-code:  0
 
-      - name: Trivy scan — backend image SARIF
+      - name: Scan backend image - SARIF for Security tab
         uses: aquasecurity/trivy-action@master
         with:
-          scan-type:    image
-          image-ref:    ${{ env.IMAGE_BACKEND }}:${{ needs.docker-build.outputs.image-tag }}
-          severity:     HIGH,CRITICAL
-          format:       sarif
-          output:       trivy-backend-image.sarif
-          exit-code:    0
+          scan-type:  image
+          image-ref:  ${{ env.IMAGE_BACKEND }}:${{ github.run_number }}
+          severity:   HIGH,CRITICAL
+          format:     sarif
+          output:     trivy-backend-image.sarif
+          exit-code:  0
 
-      - name: Trivy scan — frontend image SARIF
+      - name: Scan frontend image - SARIF for Security tab
         uses: aquasecurity/trivy-action@master
         with:
-          scan-type:    image
-          image-ref:    ${{ env.IMAGE_FRONTEND }}:${{ needs.docker-build.outputs.image-tag }}
-          severity:     HIGH,CRITICAL
-          format:       sarif
-          output:       trivy-frontend-image.sarif
-          exit-code:    0
+          scan-type:  image
+          image-ref:  ${{ env.IMAGE_FRONTEND }}:${{ github.run_number }}
+          severity:   HIGH,CRITICAL
+          format:     sarif
+          output:     trivy-frontend-image.sarif
+          exit-code:  0
 
       - name: Upload backend image SARIF to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v4
@@ -268,13 +256,13 @@ jobs:
           sarif_file: trivy-frontend-image.sarif
           category:   trivy-frontend-image
 
-# ════════════════════════════════════════════════════════════
-# JOB 6 — Push to Docker Hub
-# ════════════════════════════════════════════════════════════
+  # ----------------------------------------------------------------
+  # JOB 6 - Push to Docker Hub
+  # ----------------------------------------------------------------
   docker-push:
-    name: "📦 Push to Docker Hub"
+    name: "Push to Docker Hub"
     runs-on: ubuntu-latest
-    needs: trivy-image-scan
+    needs: [docker-build, trivy-image-scan]
     if: github.ref == 'refs/heads/master' && github.event_name == 'push'
     steps:
       - name: Download backend image
@@ -293,26 +281,26 @@ jobs:
           docker load -i frontend-image.tar
 
       - name: Log in to Docker Hub
-        uses: docker/login-action@v4
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Push backend image
         run: |
-          docker push ${{ env.IMAGE_BACKEND }}:${{ needs.docker-build.outputs.image-tag }}
+          docker push ${{ env.IMAGE_BACKEND }}:${{ github.run_number }}
           docker push ${{ env.IMAGE_BACKEND }}:latest
 
       - name: Push frontend image
         run: |
-          docker push ${{ env.IMAGE_FRONTEND }}:${{ needs.docker-build.outputs.image-tag }}
+          docker push ${{ env.IMAGE_FRONTEND }}:${{ github.run_number }}
           docker push ${{ env.IMAGE_FRONTEND }}:latest
 
-# ════════════════════════════════════════════════════════════
-# JOB 7 — Deploy with Docker Compose
-# ════════════════════════════════════════════════════════════
+  # ----------------------------------------------------------------
+  # JOB 7 - Deploy with Docker Compose
+  # ----------------------------------------------------------------
   deploy:
-    name: "🚀 Deploy"
+    name: "Deploy"
     runs-on: ubuntu-latest
     needs: docker-push
     if: github.ref == 'refs/heads/master' && github.event_name == 'push'
