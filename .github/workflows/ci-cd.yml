@@ -102,7 +102,7 @@ jobs:
             --severity HIGH,CRITICAL \
             --format table \
             --exit-code 0 \
-            kubernetes/backend.yaml
+            kubernetes/backend.yml
 
       - name: Scan frontend deployment manifest
         run: |
@@ -110,7 +110,7 @@ jobs:
             --severity HIGH,CRITICAL \
             --format table \
             --exit-code 0 \
-            kubernetes/frontend.yaml
+            kubernetes/frontend.yml
 
       - name: Scan postgres deployment manifest
         run: |
@@ -118,7 +118,7 @@ jobs:
             --severity HIGH,CRITICAL \
             --format table \
             --exit-code 0 \
-            kubernetes/postgres.yaml
+            kubernetes/postgres.yml
 
       - name: Scan all Kubernetes manifests — SARIF report
         run: |
