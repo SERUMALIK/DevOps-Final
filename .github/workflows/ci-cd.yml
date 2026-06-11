@@ -11,6 +11,14 @@ env:
   IMAGE_BACKEND:      sidramalik1454/inventorypro-backend
   IMAGE_FRONTEND:     sidramalik1454/inventorypro-frontend
 
+
+
+permissions:
+  contents:        read
+  security-events: write   # ← this is what was missing for SARIF uploads
+  actions:         read
+
+
 # ════════════════════════════════════════════════════════════
 # JOB 1 — SonarCloud Code Quality Analysis
 # ════════════════════════════════════════════════════════════
@@ -76,7 +84,7 @@ jobs:
           exit-code:    0
 
       - name: Upload SARIF to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-fs-backend.sarif
           category:   trivy-filesystem
@@ -130,7 +138,7 @@ jobs:
             kubernetes/
 
       - name: Upload K8s SARIF to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-k8s.sarif
           category:   trivy-kubernetes
@@ -249,13 +257,13 @@ jobs:
           exit-code:    0
 
       - name: Upload backend image SARIF to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-backend-image.sarif
           category:   trivy-backend-image
 
       - name: Upload frontend image SARIF to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-frontend-image.sarif
           category:   trivy-frontend-image
@@ -285,7 +293,7 @@ jobs:
           docker load -i frontend-image.tar
 
       - name: Log in to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
